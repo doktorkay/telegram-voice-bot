@@ -33,7 +33,7 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Add handlers
 application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
 # Initialize application (needed before process_update)
 async def initialize_bot():
