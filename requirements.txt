@@ -1,6 +1,6 @@
-python-telegram-bot
+python-telegram-bot==22.1
 openai
 google-api-python-client
 google-auth
 google-auth-oauthlib
-google-auth-httplib2
+flask
