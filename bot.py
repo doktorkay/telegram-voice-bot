@@ -1,113 +1,70 @@
 import os
-import json
-import re
+import logging
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, Dispatcher
 import openai
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from google_calendar import create_google_calendar_event
+import asyncio
 
-# CONFIGURAZIONE
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # es: "https://tuobot.onrender.com/telegram"
 
-# SETUP CLIENT
-openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = OPENAI_API_KEY
 
-# FUNZIONE PER INTERPRETARE COMANDO CON CHATGPT
-def interpret_command(transcription):
-    prompt = f"""
-Sei un assistente che legge un comando vocale trascritto e restituisce SOLO in JSON l'azione da fare, senza spiegazioni.
-Restituisci SEMPRE la data anche in formato ISO (YYYY-MM-DD).
-Se ci sono invitati, restituiscili come lista di email.
+app = Flask(__name__)
 
-Esempio:
-Input: "Aggiungi evento martedì prossimo dalle 10 alle 11:15 chiamato Riunione progetto, descrizione: preparare presentazione, luogo: ufficio, invitati: mario@example.com, anna@example.com"
-Output: {{
-    "action": "create_event",
-    "title": "Riunione progetto",
-    "description": "preparare presentazione",
-    "location": "ufficio",
-    "attendees": ["mario@example.com", "anna@example.com"],
-    "date": "martedì prossimo",
-    "date_iso": "2025-05-28",
-    "start_time": "10:00",
-    "end_time": "11:15"
-}}
+bot = Bot(token=TOKEN)
+application = Application.builder().token(TOKEN).build()
+dispatcher = application.dispatcher
 
-Ora analizza questo input:
-"{transcription}"
-"""
+logging.basicConfig(level=logging.INFO)
 
-    response = openai_client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
-    raw_result = response.choices[0].message.content
-    print("\n--- DEBUG RAW RESPONSE ---\n", raw_result, "\n--------------------------\n")
+DOWNLOAD_DIR = "downloads"
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-    json_match = re.search(r'\{[\s\S]*\}', raw_result)
-    if not json_match:
-        raise ValueError("❌ Nessun blocco JSON trovato nella risposta:\n" + raw_result)
-
-    json_text = json_match.group(0)
-    return json.loads(json_text)
-
-# HANDLER PER /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Ciao! Mandami un messaggio vocale.')
+    await update.message.reply_text("Ciao! Inviami un messaggio vocale e lo trascriverò.")
 
-# HANDLER PER I MESSAGGI VOCALI
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = await context.bot.get_file(update.message.voice.file_id)
-    file_path = f"{update.message.voice.file_id}.ogg"
+    voice = update.message.voice
+    file = await context.bot.get_file(voice.file_id)
+    file_path = os.path.join(DOWNLOAD_DIR, f"{voice.file_unique_id}.ogg")
     await file.download_to_drive(file_path)
 
-    # TRASCRIZIONE CON WHISPER CLOUD
-    with open(file_path, "rb") as audio_file:
-        transcript = openai_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language="it"
-        )
-    transcription = transcript.text
-    await update.message.reply_text(f"Trascrizione: {transcription}")
+    await update.message.reply_text("Trascrivo l'audio...")
 
-    # INTERPRETAZIONE COMANDO
     try:
-        command = interpret_command(transcription)
-    except Exception as e:
-        await update.message.reply_text(f"❌ Errore nell'interpretazione del comando:\n{e}")
-        return
-
-    action = command.get("action")
-
-    if action == "create_event":
-        title = command.get("title")
-        iso_date = command.get("date_iso")
-        start_time = command.get("start_time", "10:00")
-        end_time = command.get("end_time", "11:00")
-        description = command.get("description", "")
-        location = command.get("location", "")
-        attendees = command.get("attendees", [])  # lista di email
-
-        try:
-            link = create_google_calendar_event(
-                title, iso_date, start_time, end_time,
-                description=description,
-                location=location,
-                attendees=attendees
+        with open(file_path, "rb") as audio_file:
+            response = openai.chat.completions.create(
+                model="gpt-4o-mini-audio-preview",
+                messages=[
+                    {"role": "user", "content": [
+                        {"type": "text", "text": "Trascrivi questo audio:"},
+                        {"type": "audio", "audio": audio_file}
+                    ]}
+                ]
             )
-            await update.message.reply_text(f"✅ Evento creato su Google Calendar:\n{link}")
-        except Exception as e:
-            await update.message.reply_text(f"❌ Errore nella creazione evento:\n{e}")
 
-    else:
-        await update.message.reply_text(f"⚠ Azione '{action}' non riconosciuta o non gestita.")
+        transcription = response.choices[0].message.content.strip()
+        await update.message.reply_text(f"Trascrizione: {transcription}")
 
-# AVVIO BOT
-app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-app.add_handler(CommandHandler('start', start))
-app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+        # Qui potresti aggiungere la logica di interpretazione GPT e Google Calendar
 
-app.run_polling()
+    except Exception as e:
+        logging.error(f"Errore durante la trascrizione: {e}")
+        await update.message.reply_text(f"Errore durante la trascrizione: {e}")
+
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
+@app.post("/telegram")
+def telegram_webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    asyncio.run(dispatcher.process_update(update))
+    return "ok"
+
+if __name__ == "__main__":
+    # Set webhook
+    asyncio.run(bot.set_webhook(url=WEBHOOK_URL))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
