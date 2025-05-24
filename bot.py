@@ -1,64 +1,48 @@
 import os
-import asyncio
 from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import logging
 
-# Setup logging
+# Configura logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Load environment variables
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
-PORT = int(os.environ.get('PORT', 10000))
+# Leggi token e webhook URL dalle variabili d'ambiente
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
 
-# Initialize Flask
 app = Flask(__name__)
 
-# Initialize Telegram bot
-bot = Bot(token=TELEGRAM_TOKEN)
-application = Application.builder().token(TELEGRAM_TOKEN).build()
+# Inizializza Application
+application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-# Define simple handlers
+# === HANDLER ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Ciao! Sono pronto a ricevere i tuoi messaggi vocali.')
+    await update.message.reply_text('Ciao! Sono pronto!')
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Ho ricevuto il tuo messaggio!')
+    await update.message.reply_text('Hai detto: ' + update.message.text)
 
-# Add handlers
 application.add_handler(CommandHandler('start', start))
-application.add_handler(MessageHandler(filters.ALL, handle_message))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Set webhook
-async def set_webhook():
-    webhook_set = await application.bot.set_webhook(f"{WEBHOOK_URL}/telegram")
-    if webhook_set:
-        logger.info("Webhook impostato correttamente!")
-    else:
-        logger.error("Errore nell'impostare il webhook.")
-
-asyncio.run(set_webhook())
-
-# Flask route
-@app.route('/telegram', methods=['POST'])
-def telegram_webhook():
-    try:
-        data = request.get_json(force=True)
-        update = Update.de_json(data, bot)
-        asyncio.run(application.process_update(update))
-        return 'ok'
-    except Exception as e:
-        logger.error(f"❌ Errore nel webhook: {e}")
-        import traceback
-        traceback.print_exc()
-        return 'error', 500
-
-@app.route('/')
-def index():
-    return 'Bot in esecuzione!'
+# === FLASK ENDPOINT ===
+@app.post('/telegram')
+async def telegram_webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, application.bot)
+    await application.update_queue.put(update)
+    return 'ok'
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=PORT)
+    # Imposta il webhook su Telegram
+    import asyncio
+    async def main():
+        await application.bot.set_webhook(url=WEBHOOK_URL + '/telegram')
+        logging.info('✅ Webhook impostato correttamente!')
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()  # serve per webhook
+    asyncio.run(main())
+
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
