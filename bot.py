@@ -39,14 +39,13 @@ def index():
 # Route per Telegram webhook
 @app.route('/telegram', methods=['POST'])
 async def telegram_webhook():
+    logger.info("✅ Ricevuto POST sul webhook!")
     try:
-        data = request.get_json(force=True)
-        update = Update.de_json(data, application.bot)
-        await application.update_queue.put(update)
-        return 'ok'
+        update = telegram.Update.de_json(request.get_json(force=True), application.bot)
+        await application.process_update(update)
     except Exception as e:
-        logger.error(f'❌ Errore nel webhook: {e}')
-        return 'error', 500
+        logger.error(f"❌ Errore nel webhook: {e}")
+    return 'ok'
 
 # Setup webhook all’avvio
 async def setup_webhook():
