@@ -11,9 +11,6 @@ TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
 # SETUP CLIENT
-if not os.path.exists(DOWNLOAD_DIR):
-    os.makedirs(DOWNLOAD_DIR)
-
 openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # FUNZIONE PER INTERPRETARE COMANDO CON CHATGPT
@@ -63,7 +60,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # HANDLER PER I MESSAGGI VOCALI
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(update.message.voice.file_id)
-    file_path = os.path.join(DOWNLOAD_DIR, f'{update.message.voice.file_id}.ogg')
+    file_path = f"{update.message.voice.file_id}.ogg"
     await file.download_to_drive(file_path)
 
     # TRASCRIZIONE CON WHISPER CLOUD
