@@ -2,7 +2,7 @@ import os
 import logging
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, Dispatcher
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 import openai
 import asyncio
 
@@ -16,7 +16,6 @@ app = Flask(__name__)
 
 bot = Bot(token=TOKEN)
 application = Application.builder().token(TOKEN).build()
-dispatcher = application.dispatcher
 
 logging.basicConfig(level=logging.INFO)
 
@@ -61,10 +60,9 @@ application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 @app.post("/telegram")
 def telegram_webhook():
     update = Update.de_json(request.get_json(force=True), bot)
-    asyncio.run(dispatcher.process_update(update))
+    asyncio.run(application.process_update(update))
     return "ok"
 
 if __name__ == "__main__":
-    # Set webhook
     asyncio.run(bot.set_webhook(url=WEBHOOK_URL))
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
