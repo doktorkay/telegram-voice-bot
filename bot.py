@@ -1,10 +1,8 @@
 import os
 import logging
-import httpx
-import tempfile
+import openai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-import openai
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -14,47 +12,50 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
 
-# Define command handler
+# OpenAI client
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+# Handlers
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ciao! Sono vivo 🚀")
 
-# Define text message handler
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Hai detto: {update.message.text}")
 
-# Define voice message handler
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    voice = update.message.voice
-    file = await context.bot.get_file(voice.file_id)
-    file_url = file.file_path
-    logger.info(f"📥 Ricevuto vocale. File URL: {file_url}")
+    file = await context.bot.get_file(update.message.voice.file_id)
+    file_path = "voice.ogg"
+    await file.download_to_drive(file_path)
+    logger.info(f"📥 Scaricato file vocale come {file_path}")
 
-    # Scarica il file in un file temporaneo
-    async with httpx.AsyncClient() as client:
-        response = await client.get(file_url)
-        if response.status_code != 200:
-            await update.message.reply_text("❌ Errore nel download del file vocale.")
-            return
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".oga") as temp_file:
-            temp_file.write(response.content)
-            temp_filename = temp_file.name
-
-    # Invia il file a OpenAI Whisper
     try:
-        with open(temp_filename, "rb") as audio_file:
-            transcription = openai.Audio.transcribe("whisper-1", audio_file)
-            text = transcription["text"]
-            await update.message.reply_text(f"📝 Trascrizione: {text}")
-    except Exception as e:
-        logger.error(f"❌ Errore nella trascrizione: {e}")
-        await update.message.reply_text("❌ Errore nella trascrizione del vocale.")
-    finally:
-        os.remove(temp_filename)  # pulizia file temporaneo
+        # Step 1: Trascrizione Whisper
+        with open(file_path, "rb") as audio_file:
+            response = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file
+            )
+        transcript = response.text
+        logger.info(f"✏️ Trascrizione Whisper: {transcript}")
 
-# Define error handler
+        # Step 2: Passaggio a GPT-4o
+        gpt_response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Sei un assistente che riassume brevemente messaggi vocali."},
+                {"role": "user", "content": f"Questo è stato detto: {transcript}. Riassumilo brevemente."}
+            ]
+        )
+        summary = gpt_response.choices[0].message.content
+        logger.info(f"📝 Riassunto GPT-4o: {summary}")
+
+        await update.message.reply_text(f"Riassunto GPT-4o: {summary}")
+    except Exception as e:
+        logger.error(f"❌ Errore nella trascrizione o elaborazione: {e}")
+        await update.message.reply_text("Si è verificato un errore durante la trascrizione o l'elaborazione.")
+
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Errore: {context.error}")
 
