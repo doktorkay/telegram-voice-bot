@@ -26,7 +26,7 @@ application.add_error_handler(error_handler)
 
 # Define command handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.application.create_task(update.message.reply_text("Ciao! Sono vivo 🚀"))
+    await update.message.reply_text("Ciao! Sono vivo 🚀")
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Hai detto: {update.message.text}")
