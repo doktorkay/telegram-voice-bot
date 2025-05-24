@@ -21,6 +21,12 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Define voice message handler
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    voice = update.message.voice
+    file_id = voice.file_id
+    file = await context.bot.get_file(file_id)
+    file_url = file.file_path
+
+    logger.info(f"📥 Ricevuto vocale. File URL: {file_url}")
     await update.message.reply_text("Hai mandato un vocale!")
 
 # Define error handler
