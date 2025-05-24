@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
@@ -29,12 +30,6 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-# Set webhook (only once, on startup)
-@app.before_first_request
-def init_webhook():
-    logger.info("✅ Impostazione webhook al primo avvio")
-    application.bot.set_webhook(f"{WEBHOOK_URL}/telegram")
-
 # Flask route for Telegram webhook
 @app.route("/telegram", methods=["POST"])
 async def telegram_webhook():
@@ -46,6 +41,11 @@ async def telegram_webhook():
         logger.exception(f"❌ Errore nel webhook: {e}")
     return jsonify({"status": "ok"})
 
-# Run Flask app
+async def set_webhook():
+    await application.bot.set_webhook(f"{WEBHOOK_URL}/telegram")
+    logger.info("✅ Webhook impostato correttamente!")
+
 if __name__ == "__main__":
+    # Run async setup before starting Flask
+    asyncio.run(set_webhook())
     app.run(host="0.0.0.0", port=10000)
