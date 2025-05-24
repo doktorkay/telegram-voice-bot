@@ -19,17 +19,17 @@ app = Flask(__name__)
 # Telegram Application
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
+async def error_handler(update, context):
+    print(f"⚠️ Errore: {context.error}")
+
+application.add_error_handler(error_handler)
+
 # Define command handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.application.create_task(update.message.reply_text("Ciao! Sono vivo 🚀"))
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Hai detto: {update.message.text}")
-
-async def error_handler(update, context):
-    print(f"⚠️ Errore: {context.error}")
-
-application.add_error_handler(error_handler)
 
 # Add handlers
 application.add_handler(CommandHandler("start", start))
