@@ -1,7 +1,10 @@
 import os
 import logging
+import httpx
+import tempfile
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+import openai
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -10,6 +13,8 @@ logger = logging.getLogger(__name__)
 # Get environment variables
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
 
 # Define command handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -22,12 +27,32 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Define voice message handler
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     voice = update.message.voice
-    file_id = voice.file_id
-    file = await context.bot.get_file(file_id)
+    file = await context.bot.get_file(voice.file_id)
     file_url = file.file_path
-
     logger.info(f"📥 Ricevuto vocale. File URL: {file_url}")
-    await update.message.reply_text("Hai mandato un vocale!")
+
+    # Scarica il file in un file temporaneo
+    async with httpx.AsyncClient() as client:
+        response = await client.get(file_url)
+        if response.status_code != 200:
+            await update.message.reply_text("❌ Errore nel download del file vocale.")
+            return
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".oga") as temp_file:
+            temp_file.write(response.content)
+            temp_filename = temp_file.name
+
+    # Invia il file a OpenAI Whisper
+    try:
+        with open(temp_filename, "rb") as audio_file:
+            transcription = openai.Audio.transcribe("whisper-1", audio_file)
+            text = transcription["text"]
+            await update.message.reply_text(f"📝 Trascrizione: {text}")
+    except Exception as e:
+        logger.error(f"❌ Errore nella trascrizione: {e}")
+        await update.message.reply_text("❌ Errore nella trascrizione del vocale.")
+    finally:
+        os.remove(temp_filename)  # pulizia file temporaneo
 
 # Define error handler
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
