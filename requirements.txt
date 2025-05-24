@@ -1,6 +1,7 @@
-python-telegram-bot==22.1
+flask[async]
+python-telegram-bot
 openai
 google-api-python-client
 google-auth
 google-auth-oauthlib
-flask
+google-auth-httplib2
