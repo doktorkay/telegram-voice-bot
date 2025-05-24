@@ -9,19 +9,19 @@ logger = logging.getLogger(__name__)
 
 # Get environment variables
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # es: https://tuo-dominio.onrender.com/telegram
 
 # Initialize Application
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# Handlers
+# Define handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ciao! Sono vivo 🚀")
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Hai detto: {update.message.text}")
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"⚠️ Errore: {context.error}")
 
 # Add handlers
@@ -30,7 +30,6 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 application.add_error_handler(error_handler)
 
 if __name__ == "__main__":
-    # Run the webhook natively
     application.run_webhook(
         listen="0.0.0.0",
         port=10000,
