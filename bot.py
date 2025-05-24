@@ -20,7 +20,7 @@ app = Flask(__name__)
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 async def error_handler(update, context):
-    print(f"⚠️ Errore: {context.error}")
+    logger.error(f"⚠️ Errore: {context.error}")
 
 application.add_error_handler(error_handler)
 
@@ -33,7 +33,7 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Add handlers
 application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))  # FIXED
 
 # Initialize application (needed before process_update)
 async def initialize_bot():
