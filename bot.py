@@ -64,5 +64,13 @@ def telegram_webhook():
     return "ok"
 
 if __name__ == "__main__":
+    import asyncio
+
+    # Inizializza l’application prima di ricevere webhook
+    asyncio.run(application.initialize())
+
+    # Imposta il webhook
     asyncio.run(bot.set_webhook(url=WEBHOOK_URL))
+
+    # Avvia Flask server
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
