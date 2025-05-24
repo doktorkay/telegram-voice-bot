@@ -1,76 +1,64 @@
 import os
-import logging
+import asyncio
 from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-import openai
-import asyncio
+import logging
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # es: "https://tuobot.onrender.com/telegram"
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-openai.api_key = OPENAI_API_KEY
+# Load environment variables
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+PORT = int(os.environ.get('PORT', 10000))
 
+# Initialize Flask
 app = Flask(__name__)
 
-bot = Bot(token=TOKEN)
-application = Application.builder().token(TOKEN).build()
+# Initialize Telegram bot
+bot = Bot(token=TELEGRAM_TOKEN)
+application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-logging.basicConfig(level=logging.INFO)
-
-DOWNLOAD_DIR = "downloads"
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
+# Define simple handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ciao! Inviami un messaggio vocale e lo trascriverò.")
+    await update.message.reply_text('Ciao! Sono pronto a ricevere i tuoi messaggi vocali.')
 
-async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    voice = update.message.voice
-    file = await context.bot.get_file(voice.file_id)
-    file_path = os.path.join(DOWNLOAD_DIR, f"{voice.file_unique_id}.ogg")
-    await file.download_to_drive(file_path)
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Ho ricevuto il tuo messaggio!')
 
-    await update.message.reply_text("Trascrivo l'audio...")
+# Add handlers
+application.add_handler(CommandHandler('start', start))
+application.add_handler(MessageHandler(filters.ALL, handle_message))
 
-    try:
-        with open(file_path, "rb") as audio_file:
-            response = openai.chat.completions.create(
-                model="gpt-4o-mini-audio-preview",
-                messages=[
-                    {"role": "user", "content": [
-                        {"type": "text", "text": "Trascrivi questo audio:"},
-                        {"type": "audio", "audio": audio_file}
-                    ]}
-                ]
-            )
+# Set webhook
+async def set_webhook():
+    webhook_set = await application.bot.set_webhook(f"{WEBHOOK_URL}/telegram")
+    if webhook_set:
+        logger.info("Webhook impostato correttamente!")
+    else:
+        logger.error("Errore nell'impostare il webhook.")
 
-        transcription = response.choices[0].message.content.strip()
-        await update.message.reply_text(f"Trascrizione: {transcription}")
+asyncio.run(set_webhook())
 
-        # Qui potresti aggiungere la logica di interpretazione GPT e Google Calendar
-
-    except Exception as e:
-        logging.error(f"Errore durante la trascrizione: {e}")
-        await update.message.reply_text(f"Errore durante la trascrizione: {e}")
-
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.VOICE, handle_voice))
-
-@app.post("/telegram")
+# Flask route
+@app.route('/telegram', methods=['POST'])
 def telegram_webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    asyncio.run(application.process_update(update))
-    return "ok"
+    try:
+        data = request.get_json(force=True)
+        update = Update.de_json(data, bot)
+        asyncio.run(application.process_update(update))
+        return 'ok'
+    except Exception as e:
+        logger.error(f"❌ Errore nel webhook: {e}")
+        import traceback
+        traceback.print_exc()
+        return 'error', 500
 
-if __name__ == "__main__":
-    import asyncio
+@app.route('/')
+def index():
+    return 'Bot in esecuzione!'
 
-    # Inizializza l’application prima di ricevere webhook
-    asyncio.run(application.initialize())
-
-    # Imposta il webhook
-    asyncio.run(bot.set_webhook(url=WEBHOOK_URL))
-
-    # Avvia Flask server
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=PORT)
