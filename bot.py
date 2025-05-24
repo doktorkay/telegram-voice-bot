@@ -30,7 +30,12 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-# Flask route for Telegram webhook
+# Initialize application (needed before process_update)
+async def initialize_bot():
+    await application.initialize()
+    await application.bot.set_webhook(f"{WEBHOOK_URL}/telegram")
+    logger.info("✅ Bot inizializzato e webhook impostato correttamente!")
+
 @app.route("/telegram", methods=["POST"])
 async def telegram_webhook():
     try:
@@ -41,11 +46,6 @@ async def telegram_webhook():
         logger.exception(f"❌ Errore nel webhook: {e}")
     return jsonify({"status": "ok"})
 
-async def set_webhook():
-    await application.bot.set_webhook(f"{WEBHOOK_URL}/telegram")
-    logger.info("✅ Webhook impostato correttamente!")
-
 if __name__ == "__main__":
-    # Run async setup before starting Flask
-    asyncio.run(set_webhook())
+    asyncio.run(initialize_bot())
     app.run(host="0.0.0.0", port=10000)
