@@ -29,11 +29,12 @@ TODOIST_HEADERS = {
 }
 TODOIST_PROJECT_ID = 2354367533  # Project ID for 'To-do'
 
-# Map GPT priority to Todoist priority
+# Correct priority mapping
 PRIORITY_MAP = {
-    "high": 1,    # Priority 1
-    "medium": 2,  # Priority 2
-    "low": 3      # Priority 3
+    "high": 4,    # Priority 1 (highest)
+    "medium": 3,  # Priority 2
+    "low": 2      # Priority 3
+    # Default is Priority 4 (1)
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -92,8 +93,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"✅ Task: {title}, Area: {area}, Contenuto: {content}, Priorità: {priority}")
 
-        # Map priority to Todoist (default to 4 if unrecognized)
-        todoist_priority = PRIORITY_MAP.get(priority, 4)
+        # Map priority to Todoist (default to 1 if unrecognized)
+        todoist_priority = PRIORITY_MAP.get(priority, 1)
 
         # Create the task with project_id, labels (names), and priority
         task_payload = {
@@ -109,7 +110,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         if create_task_resp.status_code in [200, 201]:
             logger.info("📌 Task creata su Todoist")
-            await update.message.reply_text(f"Task '{title}' creata su Todoist nel progetto To-do con tag: {area}, {content}, {priority} e priorità: Priority {todoist_priority}")
+            await update.message.reply_text(
+                f"Task '{title}' creata su Todoist nel progetto To-do con tag: {area}, {content}, {priority} e priorità Todoist: Priority {todoist_priority}"
+            )
         else:
             logger.error(f"❌ Errore creando task: {create_task_resp.text}")
             await update.message.reply_text("Errore creando la task su Todoist.")
