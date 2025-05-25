@@ -131,11 +131,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "calendar":
         calendar_prompt = (
-            f"Dal seguente comando estrai:\n"
-            f"Titolo: <titolo>\n"
-            f"Data ISO: <yyyy-mm-dd>\n"
-            f"Orario: <hh:mm - hh:mm>\n"
-            f"Testo: '{text}'"
+            f"Dal seguente comando estrai solo:\n"
+            f"- Titolo: <titolo>\n"
+            f"- Data: la data esatta in formato yyyy-mm-dd (senza parentesi, senza spiegazioni, solo data calcolata, es. 2025-05-30)\n"
+            f"- Orario: hh:mm - hh:mm\n"
+            f"\nComando: '{text}'\n"
+            f"Rispondi solo nel formato:\nTitolo: ...\nData: ...\nOrario: ..."
         )
         cal_response = openai.chat.completions.create(
             model="gpt-4o",
@@ -146,8 +147,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for line in cal_lines:
             if line.startswith("Titolo:"):
                 title = line.replace("Titolo:", "").strip()
-            elif line.startswith("Data ISO:"):
-                date_iso = line.replace("Data ISO:", "").strip()
+            elif line.startswith("Data:"):
+                date_iso = line.replace("Data:", "").strip()
             elif line.startswith("Orario:"):
                 time_str = line.replace("Orario:", "").strip()
     
@@ -166,6 +167,22 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"❌ Errore parsing orario: {e}")
             await update.message.reply_text("Errore nella lettura dell'orario, evento non creato.")
             return
+
+    event = {
+        'summary': title,
+        'start': {
+            'dateTime': start_dt.isoformat(),
+            'timeZone': 'Europe/Rome',
+        },
+        'end': {
+            'dateTime': end_dt.isoformat(),
+            'timeZone': 'Europe/Rome',
+        },
+    }
+    created_event = calendar_service.events().insert(calendarId='primary', body=event).execute()
+    logger.info(f"📅 Evento creato: {created_event.get('htmlLink')}")
+    await update.message.reply_text(f"Evento creato: {created_event.get('htmlLink')}")
+    return
 
     event = {
         'summary': title,
