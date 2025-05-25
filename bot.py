@@ -3,6 +3,8 @@ import logging
 import tempfile
 import requests
 import openai
+import datetime
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -27,6 +29,19 @@ TODOIST_HEADERS = {
     "Authorization": f"Bearer {TODOIST_API_TOKEN}",
     "Content-Type": "application/json"
 }
+
+# Retrieve and store the 'To-do' project ID
+def get_todo_project_id():
+    response = requests.get(f"{TODOIST_API_URL}/projects", headers=TODOIST_HEADERS)
+    response.raise_for_status()
+    projects = response.json()
+    for project in projects:
+        if project['name'].lower() == "to-do":
+            logger.info(f"📁 Trovato project 'To-do' con ID: {project['id']}")
+            return project['id']
+    raise Exception("Progetto 'To-do' non trovato su Todoist")
+
+TODO_PROJECT_ID = get_todo_project_id()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ciao! Mandami un messaggio vocale e capirò se creare un evento su Calendar o una task su Todoist, con tag intelligenti.")
@@ -64,7 +79,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).\n"
             f"4. Un tag priorità (Low, Medium, High).\n"
             f"Rispondi in questo formato:\n"
-            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\n"
+            f"Titolo: <titolo>\n"
+            f"Area: <area>\n"
+            f"Contenuto: <contenuto>\n"
+            f"Priorità: <priorità>\n"
             f"Testo: '{text}'"
         )
         tag_response = openai.chat.completions.create(
@@ -89,7 +107,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = requests.get(f"{TODOIST_API_URL}/labels", headers=TODOIST_HEADERS)
         existing_labels = {label['name']: label['id'] for label in response.json()}
 
-        # Ensure all labels exist and collect IDs
+        # Ensure all labels exist
         final_label_ids = []
         for label in [area, content, priority]:
             if label in existing_labels:
@@ -104,19 +122,18 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 final_label_ids.append(new_label['id'])
                 existing_labels[label] = new_label['id']
 
-        logger.info(f"🏷️ Label IDs: {final_label_ids}")
-
-        # Create the task with label_ids
+        # Create the task inside the 'To-do' project
         task_payload = {
             "content": title,
-            "labels": [area, content, priority]
+            "label_ids": final_label_ids,
+            "project_id": TODO_PROJECT_ID
         }
         create_task_resp = requests.post(
             f"{TODOIST_API_URL}/tasks",
             headers=TODOIST_HEADERS,
             json=task_payload
         )
-        if create_task_resp.status_code == 200 or create_task_resp.status_code == 204:
+        if create_task_resp.status_code == 200:
             logger.info("📌 Task creata su Todoist")
             await update.message.reply_text(f"Task '{title}' creata su Todoist con tag: {area}, {content}, {priority}")
         else:
