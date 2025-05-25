@@ -3,8 +3,6 @@ import logging
 import tempfile
 import requests
 import openai
-import datetime
-import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -91,31 +89,34 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = requests.get(f"{TODOIST_API_URL}/labels", headers=TODOIST_HEADERS)
         existing_labels = {label['name']: label['id'] for label in response.json()}
 
-        # Ensure all labels exist
-        final_label_names = []
+        # Ensure all labels exist and collect IDs
+        final_label_ids = []
         for label in [area, content, priority]:
-            if label not in existing_labels:
+            if label in existing_labels:
+                final_label_ids.append(existing_labels[label])
+            else:
                 create_resp = requests.post(
                     f"{TODOIST_API_URL}/labels",
                     headers=TODOIST_HEADERS,
                     json={"name": label}
                 )
-                if create_resp.status_code == 200:
-                    new_label = create_resp.json()
-                    existing_labels[label] = new_label['id']
-            final_label_names.append(label)
+                new_label = create_resp.json()
+                final_label_ids.append(new_label['id'])
+                existing_labels[label] = new_label['id']
 
-        # Create the task with labels by name
+        logger.info(f"🏷️ Label IDs: {final_label_ids}")
+
+        # Create the task with label_ids
         task_payload = {
             "content": title,
-            "labels": final_label_names
+            "label_ids": final_label_ids
         }
         create_task_resp = requests.post(
             f"{TODOIST_API_URL}/tasks",
             headers=TODOIST_HEADERS,
             json=task_payload
         )
-        if create_task_resp.status_code in [200, 204]:
+        if create_task_resp.status_code == 200 or create_task_resp.status_code == 204:
             logger.info("📌 Task creata su Todoist")
             await update.message.reply_text(f"Task '{title}' creata su Todoist con tag: {area}, {content}, {priority}")
         else:
