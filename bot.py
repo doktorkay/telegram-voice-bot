@@ -3,6 +3,8 @@ import logging
 import tempfile
 import requests
 import openai
+import datetime
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -34,11 +36,10 @@ PRIORITY_MAP = {
     "high": 4,    # Priority 1 (highest)
     "medium": 3,  # Priority 2
     "low": 2      # Priority 3
-    # Default is Priority 4 (1)
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ciao! Mandami un messaggio vocale e capirò se creare un evento su Calendar o una task su Todoist, con tag intelligenti e priorità assegnata.")
+    await update.message.reply_text("Ciao! Mandami un messaggio vocale e capirò se creare un evento su Calendar o una task su Todoist, con tag, priorità e scadenza.")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(update.message.voice.file_id)
@@ -65,22 +66,23 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔍 Azione rilevata: {action}")
 
     if action == "todoist":
-        # Ask GPT to extract clean task title and tags
+        # Ask GPT to extract clean task title, tags, and due date
         tag_prompt = (
             f"Dal seguente comando estrai:\n"
             f"1. Il titolo sintetico della task (senza prefissi come 'aggiungi', 'crea').\n"
             f"2. Un tag area fra: Operations, Finance, Marketing, Dev, Graphic, Sales.\n"
             f"3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).\n"
             f"4. Un tag priorità (Low, Medium, High).\n"
+            f"5. Una data di scadenza nel formato YYYY-MM-DD (se presente, altrimenti rispondi 'none').\n"
             f"Rispondi in questo formato:\n"
-            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\nTesto: '{text}'"
+            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\nScadenza: <YYYY-MM-DD o none>\nTesto: '{text}'"
         )
         tag_response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": tag_prompt}]
         )
         lines = tag_response.choices[0].message.content.strip().split("\n")
-        title = area = content = priority = ""
+        title = area = content = priority = due_date = ""
         for line in lines:
             if line.startswith("Titolo:"):
                 title = line.replace("Titolo:", "").strip()
@@ -90,18 +92,26 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 content = line.replace("Contenuto:", "").strip()
             elif line.startswith("Priorità:"):
                 priority = line.replace("Priorità:", "").strip().lower()
+            elif line.startswith("Scadenza:"):
+                due_date = line.replace("Scadenza:", "").strip()
 
-        logger.info(f"✅ Task: {title}, Area: {area}, Contenuto: {content}, Priorità: {priority}")
+        logger.info(f"✅ Task: {title}, Area: {area}, Contenuto: {content}, Priorità: {priority}, Scadenza: {due_date}")
 
-        # Map priority to Todoist (default to 1 if unrecognized)
+        # Map priority to Todoist
         todoist_priority = PRIORITY_MAP.get(priority, 1)
 
-        # Create the task with project_id, labels (names), and priority
+        # If no due date, set it to tomorrow
+        if due_date == "none" or not due_date:
+            tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+            due_date = tomorrow.isoformat()
+
+        # Create the task with project_id, labels (names), priority, and due date
         task_payload = {
             "content": title,
             "project_id": TODOIST_PROJECT_ID,
             "labels": [area, content, priority],
-            "priority": todoist_priority
+            "priority": todoist_priority,
+            "due_date": due_date
         }
         create_task_resp = requests.post(
             f"{TODOIST_API_URL}/tasks",
@@ -111,7 +121,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if create_task_resp.status_code in [200, 201]:
             logger.info("📌 Task creata su Todoist")
             await update.message.reply_text(
-                f"Task '{title}' creata su Todoist nel progetto To-do con tag: {area}, {content}, {priority} e priorità Todoist: Priority {todoist_priority}"
+                f"Task '{title}' creata su Todoist nel progetto To-do con tag: {area}, {content}, {priority}, priorità: {todoist_priority}, scadenza: {due_date}"
             )
         else:
             logger.error(f"❌ Errore creando task: {create_task_resp.text}")
