@@ -5,7 +5,6 @@ import requests
 import openai
 import datetime
 import re
-from urllib.parse import quote
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from google.oauth2.credentials import Credentials
@@ -71,10 +70,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Build Bear task URL
         task_text = f"- [ ] {clean_task}"
-        bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={quote(task_text)}"
+        bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={requests.utils.quote(task_text)}"
         logger.info(f"📝 Task Bear generata: {bear_url}")
 
-        # Send only the clickable URL (naked link)
+        # Send just the plain URL (so Telegram renders it as a clickable link)
         await update.message.reply_text(bear_url)
         return
 
