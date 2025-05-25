@@ -3,6 +3,8 @@ import logging
 import tempfile
 import requests
 import openai
+import datetime
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from google.oauth2.credentials import Credentials
@@ -48,7 +50,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"✏️ Trascrizione Whisper: {text}")
 
     # Summarize or extract info with GPT-4o
-    prompt = f"Estrarre titolo, data e orario da questo testo per creare un evento calendario: '{text}'. Restituire solo un riassunto breve in formato:\nTitolo: <titolo>\nData: <data>\nOrario: <orario>"
+    prompt = f"Estrarre titolo, data e orario da questo testo per creare un evento calendario: '{text}'. Restituire solo:\nTitolo: <titolo>\nData: <gg/mm/aaaa>\nOrario: <hh:mm - hh:mm>"
     response = openai.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}]
@@ -56,22 +58,46 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = response.choices[0].message.content.strip()
     logger.info(f"📝 Riassunto GPT-4o: {summary}")
 
-    # Extract just the title
-    title_line = next((line for line in summary.split("\n") if line.startswith("Titolo:")), None)
-    if title_line:
-        event_title = title_line.replace("Titolo:", "").strip()
-    else:
-        event_title = "Evento dal bot"
+    # Extract fields
+    title = "Evento dal bot"
+    date_str = None
+    time_str = None
 
-    # Create event (basic example)
+    for line in summary.split("\n"):
+        if line.startswith("Titolo:"):
+            title = line.replace("Titolo:", "").strip()
+        elif line.startswith("Data:"):
+            date_str = line.replace("Data:", "").strip()
+        elif line.startswith("Orario:"):
+            time_str = line.replace("Orario:", "").strip()
+
+    # Convert date (expects dd/mm/yyyy)
+    try:
+        date = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
+    except Exception as e:
+        logger.error(f"❌ Errore parsing data: {e}")
+        await update.message.reply_text("Errore nella lettura della data, evento non creato.")
+        return
+
+    # Convert time (expects hh:mm - hh:mm)
+    try:
+        start_time, end_time = re.split(r"-|–", time_str)
+        start_dt = datetime.datetime.combine(date, datetime.datetime.strptime(start_time.strip(), "%H:%M").time())
+        end_dt = datetime.datetime.combine(date, datetime.datetime.strptime(end_time.strip(), "%H:%M").time())
+    except Exception as e:
+        logger.error(f"❌ Errore parsing orario: {e}")
+        await update.message.reply_text("Errore nella lettura dell'orario, evento non creato.")
+        return
+
+    # Create event
     event = {
-        'summary': event_title,
+        'summary': title,
         'start': {
-            'dateTime': '2025-06-03T13:00:00',  # <-- qui potresti usare parsing più avanzato
+            'dateTime': start_dt.isoformat(),
             'timeZone': 'Europe/Rome',
         },
         'end': {
-            'dateTime': '2025-06-03T13:15:00',
+            'dateTime': end_dt.isoformat(),
             'timeZone': 'Europe/Rome',
         },
     }
