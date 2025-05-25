@@ -4,7 +4,6 @@ import tempfile
 import requests
 import openai
 import datetime
-import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -66,23 +65,23 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔍 Azione rilevata: {action}")
 
     if action == "todoist":
-        # Ask GPT to extract clean task title, tags, and due date
+        # Ask GPT to extract clean task title, tags, and natural due string
         tag_prompt = (
             f"Dal seguente comando estrai:\n"
             f"1. Il titolo sintetico della task (senza prefissi come 'aggiungi', 'crea').\n"
             f"2. Un tag area fra: Operations, Finance, Marketing, Dev, Graphic, Sales.\n"
             f"3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).\n"
             f"4. Un tag priorità (Low, Medium, High).\n"
-            f"5. Una data di scadenza nel formato YYYY-MM-DD (se presente, altrimenti rispondi 'none').\n"
+            f"5. Una scadenza in linguaggio naturale (es. 'tomorrow', 'next Monday', '28 May') oppure 'none' se non specificata.\n"
             f"Rispondi in questo formato:\n"
-            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\nScadenza: <YYYY-MM-DD o none>\nTesto: '{text}'"
+            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\nScadenza: <scadenza>\nTesto: '{text}'"
         )
         tag_response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": tag_prompt}]
         )
         lines = tag_response.choices[0].message.content.strip().split("\n")
-        title = area = content = priority = due_date = ""
+        title = area = content = priority = due_string = ""
         for line in lines:
             if line.startswith("Titolo:"):
                 title = line.replace("Titolo:", "").strip()
@@ -93,25 +92,24 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif line.startswith("Priorità:"):
                 priority = line.replace("Priorità:", "").strip().lower()
             elif line.startswith("Scadenza:"):
-                due_date = line.replace("Scadenza:", "").strip()
+                due_string = line.replace("Scadenza:", "").strip()
 
-        logger.info(f"✅ Task: {title}, Area: {area}, Contenuto: {content}, Priorità: {priority}, Scadenza: {due_date}")
+        logger.info(f"✅ Task: {title}, Area: {area}, Contenuto: {content}, Priorità: {priority}, Scadenza: {due_string}")
 
         # Map priority to Todoist
         todoist_priority = PRIORITY_MAP.get(priority, 1)
 
-        # If no due date, set it to tomorrow
-        if due_date == "none" or not due_date:
-            tomorrow = datetime.date.today() + datetime.timedelta(days=1)
-            due_date = tomorrow.isoformat()
+        # If no due string, set to 'tomorrow'
+        if due_string == "none" or not due_string:
+            due_string = "tomorrow"
 
-        # Create the task with project_id, labels (names), priority, and due date
+        # Create the task with project_id, labels (names), priority, and due_string
         task_payload = {
             "content": title,
             "project_id": TODOIST_PROJECT_ID,
             "labels": [area, content, priority],
             "priority": todoist_priority,
-            "due_date": due_date
+            "due_string": due_string
         }
         create_task_resp = requests.post(
             f"{TODOIST_API_URL}/tasks",
@@ -121,7 +119,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if create_task_resp.status_code in [200, 201]:
             logger.info("📌 Task creata su Todoist")
             await update.message.reply_text(
-                f"Task '{title}' creata su Todoist nel progetto To-do con tag: {area}, {content}, {priority}, priorità: {todoist_priority}, scadenza: {due_date}"
+                f"Task '{title}' creata su Todoist nel progetto To-do con tag: {area}, {content}, {priority}, priorità: {todoist_priority}, scadenza: {due_string}"
             )
         else:
             logger.error(f"❌ Errore creando task: {create_task_resp.text}")
