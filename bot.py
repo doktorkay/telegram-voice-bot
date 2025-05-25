@@ -4,8 +4,11 @@ import tempfile
 import requests
 import openai
 import datetime
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -16,9 +19,15 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TODOIST_API_TOKEN = os.getenv("TODOIST_API_TOKEN")
+GOOGLE_TOKEN_JSON = os.getenv("GOOGLE_TOKEN_JSON")
 
 # Setup OpenAI
 openai.api_key = OPENAI_API_KEY
+
+# Setup Google Calendar
+creds_info = eval(GOOGLE_TOKEN_JSON)
+creds = Credentials.from_authorized_user_info(info=creds_info)
+calendar_service = build("calendar", "v3", credentials=creds)
 
 # Telegram bot setup
 application = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -30,7 +39,6 @@ TODOIST_HEADERS = {
 }
 TODOIST_PROJECT_ID = 2354367533  # Project ID for 'To-do'
 
-# Correct priority mapping
 PRIORITY_MAP = {
     "high": 4,    # Priority 1 (highest)
     "medium": 3,  # Priority 2
@@ -65,7 +73,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔍 Azione rilevata: {action}")
 
     if action == "todoist":
-        # Ask GPT to extract clean task title, tags, and natural due string
         tag_prompt = (
             f"Dal seguente comando estrai:\n"
             f"1. Il titolo sintetico della task (senza prefissi come 'aggiungi', 'crea').\n"
@@ -96,14 +103,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"✅ Task: {title}, Area: {area}, Contenuto: {content}, Priorità: {priority}, Scadenza: {due_string}")
 
-        # Map priority to Todoist
         todoist_priority = PRIORITY_MAP.get(priority, 1)
-
-        # If no due string, set to 'tomorrow'
         if due_string == "none" or not due_string:
             due_string = "tomorrow"
 
-        # Create the task with project_id, labels (names), priority, and due_string
         task_payload = {
             "content": title,
             "project_id": TODOIST_PROJECT_ID,
@@ -127,7 +130,58 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if action == "calendar":
-        await update.message.reply_text("(Gestione evento calendario mantenuta come nella versione precedente)")
+        # Ask GPT to extract event info
+        calendar_prompt = (
+            f"Dal seguente comando estrai solo:\n"
+            f"Titolo: <titolo>\n"
+            f"Data: <gg/mm/yyyy>\n"
+            f"Orario: <hh:mm - hh:mm>\n"
+            f"Testo: '{text}'"
+        )
+        cal_response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": calendar_prompt}]
+        )
+        cal_lines = cal_response.choices[0].message.content.strip().split("\n")
+        title = date_str = time_str = ""
+        for line in cal_lines:
+            if line.startswith("Titolo:"):
+                title = line.replace("Titolo:", "").strip()
+            elif line.startswith("Data:"):
+                date_str = line.replace("Data:", "").strip()
+            elif line.startswith("Orario:"):
+                time_str = line.replace("Orario:", "").strip()
+
+        try:
+            date = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
+        except Exception as e:
+            logger.error(f"❌ Errore parsing data: {e}")
+            await update.message.reply_text("Errore nella lettura della data, evento non creato.")
+            return
+
+        try:
+            start_time, end_time = re.split(r"-|–", time_str)
+            start_dt = datetime.datetime.combine(date, datetime.datetime.strptime(start_time.strip(), "%H:%M").time())
+            end_dt = datetime.datetime.combine(date, datetime.datetime.strptime(end_time.strip(), "%H:%M").time())
+        except Exception as e:
+            logger.error(f"❌ Errore parsing orario: {e}")
+            await update.message.reply_text("Errore nella lettura dell'orario, evento non creato.")
+            return
+
+        event = {
+            'summary': title,
+            'start': {
+                'dateTime': start_dt.isoformat(),
+                'timeZone': 'Europe/Rome',
+            },
+            'end': {
+                'dateTime': end_dt.isoformat(),
+                'timeZone': 'Europe/Rome',
+            },
+        }
+        created_event = calendar_service.events().insert(calendarId='primary', body=event).execute()
+        logger.info(f"📅 Evento creato: {created_event.get('htmlLink')}")
+        await update.message.reply_text(f"Evento creato: {created_event.get('htmlLink')}")
         return
 
     await update.message.reply_text("Non ho capito se creare un evento o una task. Per favore riprova.")
