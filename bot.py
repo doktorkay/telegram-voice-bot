@@ -32,10 +32,7 @@ calendar_service = build("calendar", "v3", credentials=creds)
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Ciao! Mandami un messaggio vocale e lo trasformerò in un evento su Google Calendar.\n"
-        "Oppure usa /task e mandami un vocale per aggiungere una task su Bear."
-    )
+    await update.message.reply_text("Ciao! Mandami un messaggio vocale: capirò se creare un evento in calendario o una task su Bear.")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(update.message.voice.file_id)
@@ -52,92 +49,88 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = transcription.text
     logger.info(f"✏️ Trascrizione Whisper: {text}")
 
-    # Summarize or extract info with GPT-4o
-    prompt = f"Estrarre titolo, data e orario da questo testo per creare un evento calendario: '{text}'. Restituire solo:\nTitolo: <titolo>\nData: <gg/mm/aaaa>\nOrario: <hh:mm - hh:mm>"
-    response = openai.chat.completions.create(
+    # Decide action
+    action_prompt = f"Il seguente comando è per creare un evento calendario o una task su Bear? Rispondi solo con una parola: 'calendar' o 'bear'. Comando: '{text}'"
+    action_response = openai.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": action_prompt}]
     )
-    summary = response.choices[0].message.content.strip()
-    logger.info(f"📝 Riassunto GPT-4o: {summary}")
+    action = action_response.choices[0].message.content.strip().lower()
+    logger.info(f"🔍 Azione rilevata: {action}")
 
-    # Extract fields
-    title = "Evento dal bot"
-    date_str = None
-    time_str = None
-
-    for line in summary.split("\n"):
-        if line.startswith("Titolo:"):
-            title = line.replace("Titolo:", "").strip()
-        elif line.startswith("Data:"):
-            date_str = line.replace("Data:", "").strip()
-        elif line.startswith("Orario:"):
-            time_str = line.replace("Orario:", "").strip()
-
-    # Convert date (expects dd/mm/yyyy)
-    try:
-        date = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
-    except Exception as e:
-        logger.error(f"❌ Errore parsing data: {e}")
-        await update.message.reply_text("Errore nella lettura della data, evento non creato.")
+    if action == "bear":
+        # Build Bear task URL
+        task_text = f"- [ ] {text}"
+        bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={requests.utils.quote(task_text)}"
+        logger.info(f"📝 Task Bear generata: {bear_url}")
+        await update.message.reply_text(f"Task pronta su Bear:\n{bear_url}")
         return
 
-    # Convert time (expects hh:mm - hh:mm)
-    try:
-        start_time, end_time = re.split(r"-|–", time_str)
-        start_dt = datetime.datetime.combine(date, datetime.datetime.strptime(start_time.strip(), "%H:%M").time())
-        end_dt = datetime.datetime.combine(date, datetime.datetime.strptime(end_time.strip(), "%H:%M").time())
-    except Exception as e:
-        logger.error(f"❌ Errore parsing orario: {e}")
-        await update.message.reply_text("Errore nella lettura dell'orario, evento non creato.")
-        return
-
-    # Create event
-    event = {
-        'summary': title,
-        'start': {
-            'dateTime': start_dt.isoformat(),
-            'timeZone': 'Europe/Rome',
-        },
-        'end': {
-            'dateTime': end_dt.isoformat(),
-            'timeZone': 'Europe/Rome',
-        },
-    }
-    created_event = calendar_service.events().insert(calendarId='primary', body=event).execute()
-    logger.info(f"📅 Evento creato: {created_event.get('htmlLink')}")
-
-    await update.message.reply_text(f"✅ Evento creato su Google Calendar!\n{created_event.get('htmlLink')}")
-
-async def handle_task_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = await context.bot.get_file(update.message.voice.file_id)
-    file_path = tempfile.mktemp(suffix=".ogg")
-    await file.download_to_drive(file_path)
-    logger.info(f"📥 Scaricato file vocale come {file_path}")
-
-    # Transcribe audio
-    with open(file_path, "rb") as audio_file:
-        transcription = openai.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file
+    if action == "calendar":
+        # Summarize or extract info with GPT-4o
+        prompt = f"Estrarre titolo, data e orario da questo testo per creare un evento calendario: '{text}'. Restituire solo:\nTitolo: <titolo>\nData: <gg/mm/aaaa>\nOrario: <hh:mm - hh:mm>"
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
         )
-    task_text = transcription.text.strip()
-    logger.info(f"✏️ Trascrizione Whisper (task): {task_text}")
+        summary = response.choices[0].message.content.strip()
+        logger.info(f"📝 Riassunto GPT-4o: {summary}")
 
-    # Prepare Bear x-callback-url (append to 'Tasks' note)
-    task_line = f"- [ ] {task_text}"
-    bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={requests.utils.quote(task_line)}&mode=append&new_line=yes"
+        # Extract fields
+        title = "Evento dal bot"
+        date_str = None
+        time_str = None
 
-    logger.info(f"🐻 Bear URL: {bear_url}")
+        for line in summary.split("\n"):
+            if line.startswith("Titolo:"):
+                title = line.replace("Titolo:", "").strip()
+            elif line.startswith("Data:"):
+                date_str = line.replace("Data:", "").strip()
+            elif line.startswith("Orario:"):
+                time_str = line.replace("Orario:", "").strip()
 
-    await update.message.reply_text(f"📌 Tocca qui per aggiungere la task su Bear:\n{bear_url}")
+        # Convert date (expects dd/mm/yyyy)
+        try:
+            date = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
+        except Exception as e:
+            logger.error(f"❌ Errore parsing data: {e}")
+            await update.message.reply_text("Errore nella lettura della data, evento non creato.")
+            return
+
+        # Convert time (expects hh:mm - hh:mm)
+        try:
+            start_time, end_time = re.split(r"-|–", time_str)
+            start_dt = datetime.datetime.combine(date, datetime.datetime.strptime(start_time.strip(), "%H:%M").time())
+            end_dt = datetime.datetime.combine(date, datetime.datetime.strptime(end_time.strip(), "%H:%M").time())
+        except Exception as e:
+            logger.error(f"❌ Errore parsing orario: {e}")
+            await update.message.reply_text("Errore nella lettura dell'orario, evento non creato.")
+            return
+
+        # Create event
+        event = {
+            'summary': title,
+            'start': {
+                'dateTime': start_dt.isoformat(),
+                'timeZone': 'Europe/Rome',
+            },
+            'end': {
+                'dateTime': end_dt.isoformat(),
+                'timeZone': 'Europe/Rome',
+            },
+        }
+        created_event = calendar_service.events().insert(calendarId='primary', body=event).execute()
+        logger.info(f"📅 Evento creato: {created_event.get('htmlLink')}")
+        await update.message.reply_text(f"Evento creato: {created_event.get('htmlLink')}")
+        return
+
+    await update.message.reply_text("Non ho capito se creare un evento o una task. Per favore riprova.")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"❌ Errore: {context.error}")
 
 # Handlers
 application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("task", handle_task_voice))
 application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 application.add_error_handler(error_handler)
 
