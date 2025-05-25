@@ -29,9 +29,7 @@ TODOIST_HEADERS = {
     "Authorization": f"Bearer {TODOIST_API_TOKEN}",
     "Content-Type": "application/json"
 }
-
-# Fixed project ID for 'To-do'
-TODOIST_PROJECT_ID = "2354367533"
+TODOIST_PROJECT_ID = 2354367533  # Project ID for 'To-do'
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ciao! Mandami un messaggio vocale e capirò se creare un evento su Calendar o una task su Todoist, con tag intelligenti.")
@@ -69,8 +67,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).\n"
             f"4. Un tag priorità (Low, Medium, High).\n"
             f"Rispondi in questo formato:\n"
-            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\n"
-            f"Testo: '{text}'"
+            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\nTesto: '{text}'"
         )
         tag_response = openai.chat.completions.create(
             model="gpt-4o",
@@ -109,20 +106,20 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 final_label_ids.append(new_label['id'])
                 existing_labels[label] = new_label['id']
 
-        # Create the task in the 'To-do' project
+        # Create the task with project_id and label_ids
         task_payload = {
             "content": title,
-            "label_ids": final_label_ids,
-            "project_id": TODOIST_PROJECT_ID
+            "project_id": TODOIST_PROJECT_ID,
+            "labels": [area, content, priority]
         }
         create_task_resp = requests.post(
             f"{TODOIST_API_URL}/tasks",
             headers=TODOIST_HEADERS,
             json=task_payload
         )
-        if create_task_resp.status_code == 200:
+        if create_task_resp.status_code in [200, 201]:
             logger.info("📌 Task creata su Todoist")
-            await update.message.reply_text(f"Task '{title}' creata su Todoist con tag: {area}, {content}, {priority}")
+            await update.message.reply_text(f"Task '{title}' creata su Todoist nel progetto To-do con tag: {area}, {content}, {priority}")
         else:
             logger.error(f"❌ Errore creando task: {create_task_resp.text}")
             await update.message.reply_text("Errore creando la task su Todoist.")
