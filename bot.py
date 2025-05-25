@@ -19,6 +19,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_TOKEN_JSON = os.getenv("GOOGLE_TOKEN_JSON")
+TODOIST_API_TOKEN = os.getenv("TODOIST_API_TOKEN")
 
 # Setup OpenAI
 openai.api_key = OPENAI_API_KEY
@@ -28,11 +29,11 @@ creds_info = eval(GOOGLE_TOKEN_JSON)
 creds = Credentials.from_authorized_user_info(info=creds_info)
 calendar_service = build("calendar", "v3", credentials=creds)
 
-# Telegram bot setup
+# Setup Telegram bot
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ciao! Mandami un messaggio vocale: capirò se creare un evento in calendario o una task su Bear.")
+    await update.message.reply_text("Ciao! Mandami un messaggio vocale: capirò se creare un evento in calendario o una task su Todoist.")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(update.message.voice.file_id)
@@ -50,7 +51,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"✏️ Trascrizione Whisper: {text}")
 
     # Decide action
-    action_prompt = f"Il seguente comando è per creare un evento calendario o una task su Bear? Rispondi solo con una parola: 'calendar' o 'bear'. Comando: '{text}'"
+    action_prompt = f"Il seguente comando è per creare un evento calendario o una task su Todoist? Rispondi solo con una parola: 'calendar' o 'todoist'. Comando: '{text}'"
     action_response = openai.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": action_prompt}]
@@ -58,7 +59,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = action_response.choices[0].message.content.strip().lower()
     logger.info(f"🔍 Azione rilevata: {action}")
 
-    if action == "bear":
+    if action == "todoist":
         # Ask GPT to extract only the clean task title
         task_prompt = f"Dal seguente comando estrai solo il titolo sintetico della task, senza prefissi come 'aggiungi', 'crea' o 'nuova'. Testo: '{text}'. Rispondi solo con il titolo pulito."
         task_response = openai.chat.completions.create(
@@ -68,13 +69,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean_task = task_response.choices[0].message.content.strip()
         logger.info(f"✅ Titolo task pulito: {clean_task}")
 
-        # Build Bear task URL
-        task_text = f"- [ ] {clean_task}"
-        bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={requests.utils.quote(task_text)}"
-        logger.info(f"📝 Task Bear generata: {bear_url}")
+        # Create task in Todoist
+        headers = {
+            "Authorization": f"Bearer {TODOIST_API_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        task_data = {
+            "content": clean_task
+        }
+        response = requests.post("https://api.todoist.com/rest/v2/tasks", json=task_data, headers=headers)
 
-        # Send the plain link (Telegram on iOS may auto-link it)
-        await update.message.reply_text(bear_url)
+        if response.status_code == 200 or response.status_code == 204:
+            await update.message.reply_text(f"✅ Task creata su Todoist: {clean_task}")
+        else:
+            logger.error(f"❌ Errore Todoist: {response.text}")
+            await update.message.reply_text("Errore nella creazione della task su Todoist.")
         return
 
     if action == "calendar":
