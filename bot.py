@@ -35,7 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(update.message.voice.file_id)
     file_path = tempfile.mktemp(suffix=".ogg")
-    file.download_to_drive(file_path)
+    await file.download_to_drive(file_path)
     logger.info(f"📥 Scaricato file vocale come {file_path}")
 
     # Transcribe audio
