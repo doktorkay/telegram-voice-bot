@@ -32,7 +32,10 @@ calendar_service = build("calendar", "v3", credentials=creds)
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ciao! Mandami un messaggio vocale e lo trasformerò in un evento su Google Calendar.")
+    await update.message.reply_text(
+        "Ciao! Mandami un messaggio vocale e lo trasformerò in un evento su Google Calendar.\n"
+        "Oppure usa /task e mandami un vocale per aggiungere una task su Bear."
+    )
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(update.message.voice.file_id)
@@ -104,13 +107,37 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     created_event = calendar_service.events().insert(calendarId='primary', body=event).execute()
     logger.info(f"📅 Evento creato: {created_event.get('htmlLink')}")
 
-    await update.message.reply_text(f"Evento creato: {created_event.get('htmlLink')}")
+    await update.message.reply_text(f"✅ Evento creato su Google Calendar!\n{created_event.get('htmlLink')}")
+
+async def handle_task_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    file = await context.bot.get_file(update.message.voice.file_id)
+    file_path = tempfile.mktemp(suffix=".ogg")
+    await file.download_to_drive(file_path)
+    logger.info(f"📥 Scaricato file vocale come {file_path}")
+
+    # Transcribe audio
+    with open(file_path, "rb") as audio_file:
+        transcription = openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
+    task_text = transcription.text.strip()
+    logger.info(f"✏️ Trascrizione Whisper (task): {task_text}")
+
+    # Prepare Bear x-callback-url (append to 'Tasks' note)
+    task_line = f"- [ ] {task_text}"
+    bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={requests.utils.quote(task_line)}&mode=append&new_line=yes"
+
+    logger.info(f"🐻 Bear URL: {bear_url}")
+
+    await update.message.reply_text(f"📌 Tocca qui per aggiungere la task su Bear:\n{bear_url}")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"❌ Errore: {context.error}")
 
 # Handlers
 application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("task", handle_task_voice))
 application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 application.add_error_handler(error_handler)
 
