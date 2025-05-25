@@ -46,7 +46,7 @@ PRIORITY_MAP = {
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ciao! Mandami un messaggio vocale e capirò se creare un evento su Calendar o una task su Todoist, con tag, priorità e scadenza.")
+    await update.message.reply_text("Ciao! Mandami un messaggio vocale: capirò se creare un evento su Calendar o una task su Todoist, con tag, priorità e scadenza.")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(update.message.voice.file_id)
@@ -81,7 +81,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"4. Un tag priorità (Low, Medium, High).\n"
             f"5. Una scadenza in linguaggio naturale (es. 'tomorrow', 'next Monday', '28 May') oppure 'none' se non specificata.\n"
             f"Rispondi in questo formato:\n"
-            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\nScadenza: <scadenza>\nTesto: '{text}'"
+            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\nScadenza: <scadenza>"
         )
         tag_response = openai.chat.completions.create(
             model="gpt-4o",
@@ -130,13 +130,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if action == "calendar":
-        # Ask GPT to extract event info
         calendar_prompt = (
-            f"Dal seguente comando estrai solo:\n"
+            f"Dal seguente comando estrai:\n"
             f"Titolo: <titolo>\n"
             f"Data: <gg/mm/yyyy>\n"
-            f"Orario: <hh:mm - hh:mm>\n"
-            f"Testo: '{text}'"
+            f"Orario: <hh:mm - hh:mm>"
         )
         cal_response = openai.chat.completions.create(
             model="gpt-4o",
