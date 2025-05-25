@@ -6,7 +6,6 @@ import openai
 import datetime
 import re
 from telegram import Update
-from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -74,9 +73,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={requests.utils.quote(task_text)}"
         logger.info(f"📝 Task Bear generata: {bear_url}")
 
-        # Send clickable Markdown link (works on iOS if system allows bear://)
-        message = f"[Apri questa task su Bear]({bear_url})"
-        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        # Send the plain link (Telegram on iOS may auto-link it)
+        await update.message.reply_text(bear_url)
         return
 
     if action == "calendar":
