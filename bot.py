@@ -109,7 +109,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Create the task with label_ids
         task_payload = {
             "content": title,
-            "label_ids": final_label_ids
+            "labels": [area, content, priority]
         }
         create_task_resp = requests.post(
             f"{TODOIST_API_URL}/tasks",
