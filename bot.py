@@ -30,18 +30,8 @@ TODOIST_HEADERS = {
     "Content-Type": "application/json"
 }
 
-# Retrieve and store the 'To-do' project ID
-def get_todo_project_id():
-    response = requests.get(f"{TODOIST_API_URL}/projects", headers=TODOIST_HEADERS)
-    response.raise_for_status()
-    projects = response.json()
-    for project in projects:
-        if project['name'].lower() == "to-do":
-            logger.info(f"📁 Trovato project 'To-do' con ID: {project['id']}")
-            return project['id']
-    raise Exception("Progetto 'To-do' non trovato su Todoist")
-
-TODO_PROJECT_ID = get_todo_project_id()
+# Fixed project ID for 'To-do'
+TODOIST_PROJECT_ID = "2354367533"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ciao! Mandami un messaggio vocale e capirò se creare un evento su Calendar o una task su Todoist, con tag intelligenti.")
@@ -79,10 +69,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).\n"
             f"4. Un tag priorità (Low, Medium, High).\n"
             f"Rispondi in questo formato:\n"
-            f"Titolo: <titolo>\n"
-            f"Area: <area>\n"
-            f"Contenuto: <contenuto>\n"
-            f"Priorità: <priorità>\n"
+            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\n"
             f"Testo: '{text}'"
         )
         tag_response = openai.chat.completions.create(
@@ -122,11 +109,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 final_label_ids.append(new_label['id'])
                 existing_labels[label] = new_label['id']
 
-        # Create the task inside the 'To-do' project
+        # Create the task in the 'To-do' project
         task_payload = {
             "content": title,
             "label_ids": final_label_ids,
-            "project_id": TODO_PROJECT_ID
+            "project_id": TODOIST_PROJECT_ID
         }
         create_task_resp = requests.post(
             f"{TODOIST_API_URL}/tasks",
