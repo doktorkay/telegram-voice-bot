@@ -5,8 +5,8 @@ import requests
 import openai
 import datetime
 import re
+from urllib.parse import quote
 from telegram import Update
-from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -71,12 +71,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Build Bear task URL
         task_text = f"- [ ] {clean_task}"
-        bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={requests.utils.quote(task_text)}"
+        bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={quote(task_text)}"
         logger.info(f"📝 Task Bear generata: {bear_url}")
 
-        # Send clickable link using Markdown
-        message = f"[Aggiungi questa task a Bear]({bear_url})"
-        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        # Send only the clickable URL (naked link)
+        await update.message.reply_text(bear_url)
         return
 
     if action == "calendar":
