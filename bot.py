@@ -59,18 +59,19 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "todoist":
         # Ask GPT to extract clean task title and tags
-        tag_prompt = f"""Dal seguente comando estrai:
-        1. Il titolo sintetico della task (senza prefissi come 'aggiungi', 'crea').
-        2. Un tag area fra: Operations, Finance, Marketing, Dev, Graphic, Sales.
-        3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).
-        4. Un tag priorità (Low, Medium, High).
-        Rispondi in questo formato:
-        Titolo: <titolo>
-        Area: <area>
-        Contenuto: <contenuto>
-        Priorità: <priorità>
-        Testo: '{text}'"""
-
+        tag_prompt = (
+            f"Dal seguente comando estrai:\n"
+            f"1. Il titolo sintetico della task (senza prefissi come 'aggiungi', 'crea').\n"
+            f"2. Un tag area fra: Operations, Finance, Marketing, Dev, Graphic, Sales.\n"
+            f"3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).\n"
+            f"4. Un tag priorità (Low, Medium, High).\n"
+            f"Rispondi in questo formato:\n"
+            f"Titolo: <titolo>\n"
+            f"Area: <area>\n"
+            f"Contenuto: <contenuto>\n"
+            f"Priorità: <priorità>\n"
+            f"Testo: '{text}'"
+        )
         tag_response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": tag_prompt}]
@@ -94,19 +95,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         existing_labels = {label['name']: label['id'] for label in response.json()}
 
         # Ensure all labels exist
-        final_label_ids = []
         for label in [area, content, priority]:
-            if label in existing_labels:
-                final_label_ids.append(existing_labels[label])
-            else:
+            if label not in existing_labels:
                 create_resp = requests.post(
                     f"{TODOIST_API_URL}/labels",
                     headers=TODOIST_HEADERS,
                     json={"name": label}
                 )
-                new_label = create_resp.json()
-                final_label_ids.append(new_label['id'])
-                existing_labels[label] = new_label['id']
+                if create_resp.status_code == 200:
+                    new_label = create_resp.json()
+                    existing_labels[label] = new_label['id']
+                else:
+                    logger.error(f"❌ Errore creando label '{label}': {create_resp.text}")
+
+        # Confirm final label_ids from refreshed list
+        final_label_ids = [existing_labels[label] for label in [area, content, priority] if label in existing_labels]
 
         # Create the task
         task_payload = {
