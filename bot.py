@@ -48,7 +48,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"✏️ Trascrizione Whisper: {text}")
 
     # Summarize or extract info with GPT-4o
-    prompt = f"Estrarre titolo, data e orario da questo testo per creare un evento calendario: '{text}'. Restituire solo un riassunto breve."
+    prompt = f"Estrarre titolo, data e orario da questo testo per creare un evento calendario: '{text}'. Restituire solo un riassunto breve in formato:\nTitolo: <titolo>\nData: <data>\nOrario: <orario>"
     response = openai.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}]
@@ -56,9 +56,16 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = response.choices[0].message.content.strip()
     logger.info(f"📝 Riassunto GPT-4o: {summary}")
 
+    # Extract just the title
+    title_line = next((line for line in summary.split("\n") if line.startswith("Titolo:")), None)
+    if title_line:
+        event_title = title_line.replace("Titolo:", "").strip()
+    else:
+        event_title = "Evento dal bot"
+
     # Create event (basic example)
     event = {
-        'summary': summary,
+        'summary': event_title,
         'start': {
             'dateTime': '2025-06-03T13:00:00',  # <-- qui potresti usare parsing più avanzato
             'timeZone': 'Europe/Rome',
