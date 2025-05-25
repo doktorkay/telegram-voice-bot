@@ -6,6 +6,7 @@ import openai
 import datetime
 import re
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -59,11 +60,23 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔍 Azione rilevata: {action}")
 
     if action == "bear":
+        # Ask GPT to extract only the clean task title
+        task_prompt = f"Dal seguente comando estrai solo il titolo sintetico della task, senza prefissi come 'aggiungi', 'crea' o 'nuova'. Testo: '{text}'. Rispondi solo con il titolo pulito."
+        task_response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": task_prompt}]
+        )
+        clean_task = task_response.choices[0].message.content.strip()
+        logger.info(f"✅ Titolo task pulito: {clean_task}")
+
         # Build Bear task URL
-        task_text = f"- [ ] {text}"
+        task_text = f"- [ ] {clean_task}"
         bear_url = f"bear://x-callback-url/add-text?title=Tasks&text={requests.utils.quote(task_text)}"
         logger.info(f"📝 Task Bear generata: {bear_url}")
-        await update.message.reply_text(f"Task pronta su Bear:\n{bear_url}")
+
+        # Send clickable link using Markdown
+        message = f"[Aggiungi questa task a Bear]({bear_url})"
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
         return
 
     if action == "calendar":
