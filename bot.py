@@ -66,10 +66,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).\n"
             f"4. Un tag priorità (Low, Medium, High).\n"
             f"Rispondi in questo formato:\n"
-            f"Titolo: <titolo>\n"
-            f"Area: <area>\n"
-            f"Contenuto: <contenuto>\n"
-            f"Priorità: <priorità>\n"
+            f"Titolo: <titolo>\nArea: <area>\nContenuto: <contenuto>\nPriorità: <priorità>\n"
             f"Testo: '{text}'"
         )
         tag_response = openai.chat.completions.create(
@@ -95,6 +92,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         existing_labels = {label['name']: label['id'] for label in response.json()}
 
         # Ensure all labels exist
+        final_label_names = []
         for label in [area, content, priority]:
             if label not in existing_labels:
                 create_resp = requests.post(
@@ -105,23 +103,19 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if create_resp.status_code == 200:
                     new_label = create_resp.json()
                     existing_labels[label] = new_label['id']
-                else:
-                    logger.error(f"❌ Errore creando label '{label}': {create_resp.text}")
+            final_label_names.append(label)
 
-        # Confirm final label_ids from refreshed list
-        final_label_ids = [existing_labels[label] for label in [area, content, priority] if label in existing_labels]
-
-        # Create the task
+        # Create the task with labels by name
         task_payload = {
             "content": title,
-            "label_ids": final_label_ids
+            "labels": final_label_names
         }
         create_task_resp = requests.post(
             f"{TODOIST_API_URL}/tasks",
             headers=TODOIST_HEADERS,
             json=task_payload
         )
-        if create_task_resp.status_code == 200:
+        if create_task_resp.status_code in [200, 204]:
             logger.info("📌 Task creata su Todoist")
             await update.message.reply_text(f"Task '{title}' creata su Todoist con tag: {area}, {content}, {priority}")
         else:
