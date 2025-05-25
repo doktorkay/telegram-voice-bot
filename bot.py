@@ -59,19 +59,18 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "todoist":
         # Ask GPT to extract clean task title and tags
-        tag_prompt = (
-            f"Dal seguente comando estrai:
-            1. Il titolo sintetico della task (senza prefissi come 'aggiungi', 'crea').
-            2. Un tag area fra: Operations, Finance, Marketing, Dev, Graphic, Sales.
-            3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).
-            4. Un tag priorità (Low, Medium, High).
-            Rispondi in questo formato:
-            Titolo: <titolo>
-            Area: <area>
-            Contenuto: <contenuto>
-            Priorità: <priorità>
-            Testo: '{text}'"
-        )
+        tag_prompt = f"""Dal seguente comando estrai:
+        1. Il titolo sintetico della task (senza prefissi come 'aggiungi', 'crea').
+        2. Un tag area fra: Operations, Finance, Marketing, Dev, Graphic, Sales.
+        3. Un tag contenuto (es: E-mail, Doc, Meeting, ecc.).
+        4. Un tag priorità (Low, Medium, High).
+        Rispondi in questo formato:
+        Titolo: <titolo>
+        Area: <area>
+        Contenuto: <contenuto>
+        Priorità: <priorità>
+        Testo: '{text}'"""
+
         tag_response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": tag_prompt}]
