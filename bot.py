@@ -133,30 +133,31 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         calendar_prompt = (
             f"Dal seguente comando estrai:\n"
             f"Titolo: <titolo>\n"
-            f"Data: <gg/mm/yyyy>\n"
-            f"Orario: <hh:mm - hh:mm>"
+            f"Data ISO: <yyyy-mm-dd>\n"
+            f"Orario: <hh:mm - hh:mm>\n"
+            f"Testo: '{text}'"
         )
         cal_response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": calendar_prompt}]
         )
         cal_lines = cal_response.choices[0].message.content.strip().split("\n")
-        title = date_str = time_str = ""
+        title = date_iso = time_str = ""
         for line in cal_lines:
             if line.startswith("Titolo:"):
                 title = line.replace("Titolo:", "").strip()
-            elif line.startswith("Data:"):
-                date_str = line.replace("Data:", "").strip()
+            elif line.startswith("Data ISO:"):
+                date_iso = line.replace("Data ISO:", "").strip()
             elif line.startswith("Orario:"):
                 time_str = line.replace("Orario:", "").strip()
-
+    
         try:
-            date = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
+            date = datetime.datetime.strptime(date_iso, "%Y-%m-%d").date()
         except Exception as e:
             logger.error(f"❌ Errore parsing data: {e}")
             await update.message.reply_text("Errore nella lettura della data, evento non creato.")
             return
-
+    
         try:
             start_time, end_time = re.split(r"-|–", time_str)
             start_dt = datetime.datetime.combine(date, datetime.datetime.strptime(start_time.strip(), "%H:%M").time())
@@ -166,21 +167,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Errore nella lettura dell'orario, evento non creato.")
             return
 
-        event = {
-            'summary': title,
-            'start': {
-                'dateTime': start_dt.isoformat(),
-                'timeZone': 'Europe/Rome',
-            },
-            'end': {
-                'dateTime': end_dt.isoformat(),
-                'timeZone': 'Europe/Rome',
-            },
-        }
-        created_event = calendar_service.events().insert(calendarId='primary', body=event).execute()
-        logger.info(f"📅 Evento creato: {created_event.get('htmlLink')}")
-        await update.message.reply_text(f"Evento creato: {created_event.get('htmlLink')}")
-        return
+    event = {
+        'summary': title,
+        'start': {
+            'dateTime': start_dt.isoformat(),
+            'timeZone': 'Europe/Rome',
+        },
+        'end': {
+            'dateTime': end_dt.isoformat(),
+            'timeZone': 'Europe/Rome',
+        },
+    }
+    created_event = calendar_service.events().insert(calendarId='primary', body=event).execute()
+    logger.info(f"📅 Evento creato: {created_event.get('htmlLink')}")
+    await update.message.reply_text(f"Evento creato: {created_event.get('htmlLink')}")
+    return
 
     await update.message.reply_text("Non ho capito se creare un evento o una task. Per favore riprova.")
 
